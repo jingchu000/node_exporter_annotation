@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
 	"github.com/prometheus/exporter-toolkit/web/kingpinflag"
+
 	"github.com/prometheus/node_exporter/collector"
 )
 
@@ -52,6 +53,7 @@ type handler struct {
 }
 
 func newHandler(includeExporterMetrics bool, maxRequests int, logger log.Logger) *handler {
+	fmt.Println(includeExporterMetrics, "=====")
 	h := &handler{
 		exporterMetricsRegistry: prometheus.NewRegistry(),
 		includeExporterMetrics:  includeExporterMetrics,
@@ -143,6 +145,7 @@ func (h *handler) innerHandler(filters ...string) (http.Handler, error) {
 }
 
 func main() {
+	// 初始化配置
 	var (
 		metricsPath = kingpin.Flag(
 			"web.telemetry-path",
@@ -173,8 +176,12 @@ func main() {
 	kingpin.HelpFlag.Short('h')
 	kingpin.Parse()
 	logger := promlog.New(promlogConfig)
-
+	// 默认控制器  默认情况下将所有收集器设置为禁用  这里一开启的话，所有的collector 的init 执行，就抓取这个节点上的所有的数据
+	// 默认在liunx环境下的 proc下所有的数据 比如说 fd， limit  等等
+	// 有一个疑问，是遍历所有的pid吗？还是怎么样？	其他的进程注册？？不太理解
+	fmt.Println(disableDefaultCollectors, "=================")
 	if *disableDefaultCollectors {
+		//if true { 启动全部默认控制器
 		collector.DisableDefaultCollectors()
 	}
 	level.Info(logger).Log("msg", "Starting node_exporter", "version", version.Info())
@@ -184,7 +191,8 @@ func main() {
 	}
 	runtime.GOMAXPROCS(*maxProcs)
 	level.Debug(logger).Log("msg", "Go MAXPROCS", "procs", runtime.GOMAXPROCS(0))
-
+	// 一个http 请求， newHandler 主要处理函数在这里
+	// 传了一个 disableExporterMetrics ， 最大请求，log
 	http.Handle(*metricsPath, newHandler(!*disableExporterMetrics, *maxRequests, logger))
 	if *metricsPath != "/" {
 		landingConfig := web.LandingConfig{
@@ -198,6 +206,7 @@ func main() {
 				},
 			},
 		}
+		// NewLandingPage 设置了登陆页面- -
 		landingPage, err := web.NewLandingPage(landingConfig)
 		if err != nil {
 			level.Error(logger).Log("err", err)
@@ -205,7 +214,7 @@ func main() {
 		}
 		http.Handle("/", landingPage)
 	}
-
+	// 监听服务。     9010  /Metrics    当有请求是 都会走ListAndSever 然后有走路由的func NewLandingPage
 	server := &http.Server{}
 	if err := web.ListenAndServe(server, toolkitFlags, logger); err != nil {
 		level.Error(logger).Log("err", err)
